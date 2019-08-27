@@ -1,0 +1,31 @@
+#+Title: Longicalyx Annotation
+#+PROPERTY:  header-args :var DIR=(file-name-directory buffer-file-name)
+
+
+| Accession  |
+|------------|
+| SRR1174179 |
+| SRR1174182 |
+| SRR617075  |
+| SRR617073  |
+| SRR617068  |
+| SRR617067  |
+| SRR959508  |
+| SRR959590  |
+| SRR959585  |
+
+
+#+BEGIN_SRC sh
+ls RNA-seq/*
+#+END_SRC
+
+#+RESULTS:
+| Accessoin | Forward                                 | Reverse            |
+|-----------+-----------------------------------------+--------------------|
+| A1.5dpa   | RNA-seq/A1wagad_05dpa_GTGGCC_L004.fq.gz |                    |
+| A1.10dpa  | RNA-seq/A1wagad_10dpa_GGCTAC_L002.fq.gz |                    |
+| A1.15dpa  | RNA-seq/A1wagad_15dpa_CGTACG_L004.fq.gz |                    |
+| A2.20dap  | RNA-seq/A1wagad_20dpa_ATTCCT_L003.fq.gz |                    |
+| FF        | RNA-seq/FF_1.fq.gz                      | RNA-seq/FF_2.fq.gz |
+| FL        | RNA-seq/FL_1.fq.gz                      | RNA-seq/FL_2.fq.gz |
+| FS        | RNA-seq/FS_1.fq.gz                      | RNA-seq/FS_2.fq.gz |
