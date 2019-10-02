@@ -2,6 +2,7 @@
 #+PROPERTY:  header-args :var DIR=(file-name-directory buffer-file-name)
 
 
+#+NAME: sra
 | Accession  |
 |------------|
 | SRR1174179 |
@@ -15,17 +16,630 @@
 | SRR959585  |
 
 
-#+BEGIN_SRC sh
-ls RNA-seq/*
+#+BEGIN_SRC sh :var sra=sra :tangle RNA-seq/sra.sh 
+cd $DIR
+ROOT=$(git rev-parse --show-toplevel)
+
+cd $DIR/RNA-seq
+
+for acc in "${sra[@]}"; do
+  #addr = ftp://ftp.sra.ebi.ac.uk/vol1/fastq/<dir1>[/<dir2>]/<run accession>
+  addr="ftp://ftp.sra.ebi.ac.uk/vol1/fastq/" 
+  
+  #<dir1> is the first 6 letters and numbers of the run accession ( e.g. ERR000 for ERR000916 ),
+  dir1="${acc:0:6}"
+  
+  dir2=""
+  #If the run accession has seven digits then the <dir2> is 00 + the last digit of the run accession. For example, fastq files for run SRR1016916 are in directory: ftp://ftp.sra.ebi.ac.uk/vol1/fastq/SRR101/006/SRR1016916/.
+  #If the run accession has eight digits then the <dir2> is 0 + the last two digits of the run accession.
+  #If the run accession has nine digits then the <dir2> is the last three digits of the run accession.
+  if [ ${#acc} -gt 9 ]; then 
+    tmp="000${acc:9}"
+    dir2=${tmp:(-3)}
+  fi
+
+  wget -r "$addr/$dir1/$dir2/$acc" \
+       --no-directories \
+       -P $DIR/RNA-seq/
+        
+done
+
 #+END_SRC
 
-#+RESULTS:
-| Accessoin | Forward                                 | Reverse            |
-|-----------+-----------------------------------------+--------------------|
-| A1.5dpa   | RNA-seq/A1wagad_05dpa_GTGGCC_L004.fq.gz |                    |
-| A1.10dpa  | RNA-seq/A1wagad_10dpa_GGCTAC_L002.fq.gz |                    |
-| A1.15dpa  | RNA-seq/A1wagad_15dpa_CGTACG_L004.fq.gz |                    |
-| A2.20dap  | RNA-seq/A1wagad_20dpa_ATTCCT_L003.fq.gz |                    |
-| FF        | RNA-seq/FF_1.fq.gz                      | RNA-seq/FF_2.fq.gz |
-| FL        | RNA-seq/FL_1.fq.gz                      | RNA-seq/FL_2.fq.gz |
-| FS        | RNA-seq/FS_1.fq.gz                      | RNA-seq/FS_2.fq.gz |
+
+#+NAME: libs
+| Accessoin  | Forward                                 | Reverse                      |
+|------------+-----------------------------------------+------------------------------|
+| A1.5dpa    | RNA-seq/A1wagad_05dpa_GTGGCC_L004.fq.gz |                              |
+| A1.10dpa   | RNA-seq/A1wagad_10dpa_GGCTAC_L002.fq.gz |                              |
+| A1.15dpa   | RNA-seq/A1wagad_15dpa_CGTACG_L004.fq.gz |                              |
+| A2.20dap   | RNA-seq/A1wagad_20dpa_ATTCCT_L003.fq.gz |                              |
+| SRR1174179 | RNA-seq/SRR1174179.fastq.gz             |                              |
+| SRR617067  | RNA-seq/SRR617067.fastq.gz              |                              |
+| SRR617068  | RNA-seq/SRR617068.fastq.gz              |                              |
+| SRR617073  | RNA-seq/SRR617073.fastq.gz              |                              |
+| SRR617075  | RNA-seq/SRR617075.fastq.gz              |                              |
+| SRR959508  | RNA-seq/SRR959508_1.fastq.gz            | RNA-seq/SRR959508_2.fastq.gz |
+| SRR959585  | RNA-seq/SRR959585_1.fastq.gz            | RNA-seq/SRR959585_2.fastq.gz |
+| SRR959590  | RNA-seq/SRR959590_1.fastq.gz            | RNA-seq/SRR959590_2.fastq.gz |
+| FF         | RNA-seq/FF_1.fq.gz                      | RNA-seq/FF_2.fq.gz           |
+| FL         | RNA-seq/FL_1.fq.gz                      | RNA-seq/FL_2.fq.gz           |
+| FS         | RNA-seq/FS_1.fq.gz                      | RNA-seq/FS_2.fq.gz           |
+
+| SRR1174182 | RNA-seq/SRR1174182.fastq.gz             |                              |
+
+
+* Hisat
+#+BEGIN_SRC sh :tangle hisat/setup.sh
+cd $DIR
+ROOT=$(git rev-parse --show-toplevel)
+
+ml igbb hisat2
+
+mkdir -p $DIR/hisat/db/
+hisat2-build $DIR/longicalyx_v5.genome.hardMasked.fasta $DIR/hisat/db/longicalyx
+
+#+END_SRC
+
+#+BEGIN_SRC sh :var libs=libs :tangle hisat/run.sh
+cd $DIR
+ROOT=$(git rev-parse --show-toplevel)
+
+NAMES=(${!libs[@]})
+acc=${NAMES[$PBS_ARRAYID]}
+
+readarray -t lib <<<"${libs[$acc]}"
+
+ml igbb hisat2 samtools
+
+if [ -z ${lib[1]} ]; then 
+  hisat2 -x $DIR/hisat/db/longicalyx -U $DIR/${lib[0]} 2>$DIR/hisat/$acc.stats  |
+    samtools view -bS - > $DIR/hisat/$acc.bam
+else
+  hisat2 -x $DIR/hisat/db/longicalyx -1 $DIR/${lib[0]} -2 $DIR/${lib[1]} 2>$DIR/hisat/$acc.stats |
+    samtools view -bS - > $DIR/hisat/$acc.bam
+fi
+
+#+END_SRC
+
+| Accession  | Overall Alignment Rate |
+|------------+------------------------|
+| A1.5dpa    |                 85.31% |
+| A1.10dpa   |                 84.82% |
+| A1.15dpa   |                 85.36% |
+| A2.20dap   |                 88.79% |
+| SRR1174179 |                 54.18% |
+| SRR617067  |                 49.14% |
+| SRR617068  |                 60.49% |
+| SRR617073  |                 61.14% |
+| SRR617075  |                 60.16% |
+| SRR959508  |                 59.13% |
+| SRR959585  |                 75.80% |
+| SRR959590  |                 46.40% |
+| FF         |                 90.93% |
+| FL         |                 76.44% |
+| FS         |                 92.76% |
+
+| SRR1174182 |                  0.00% |
+
+
+
+* Braker
+#+BEGIN_SRC sh :var libs=libs[,0] :tangle braker/run.sh
+cd $DIR
+ROOT=$(git rev-parse --show-toplevel)
+
+ml singularity
+braker=$DIR/braker/braker.simg
+
+cd $DIR/braker/
+
+singularity exec -B $ROOT $braker cp -r /augustus/config $DIR/braker/
+
+singularity exec -B $ROOT $braker braker.pl \
+  --genome=$DIR/longicalyx_v5.genome.hardMasked.fasta \
+  --bam=$(printf "$DIR/hisat/%s.bam.sort.bam," "${libs[@]}" | sed -e 's/,$//') \
+  --AUGUSTUS_CONFIG_PATH=$DIR/braker/config \
+  --cores=$PBS_NUM_PPN
+
+#+END_SRC
+
+* Mikado
+** DONE Trinity
+#+BEGIN_SRC sh :var libs=libs[,0] :tangle trinity/run.sh
+cd $DIR
+ROOT=$(git rev-parse --show-toplevel)
+
+export TRINITY_HOME=$DIR/bin/trinityrnaseq-Trinity-v2.8.5/
+PATH=$TRINITY_HOME:$PATH
+
+ml igbb
+ml salmon jellyfish bowtie2 samtools
+ml python/2.7.15
+
+# samtools merge $DIR/hisat/merged.bam $(printf "$DIR/hisat/%s.bam.sort.bam " "${libs[@]}")
+# samtools index $DIR/hisat/merged.bam
+
+Trinity --genome_guided_bam $DIR/hisat/merged.bam \
+        --genome_guided_max_intron 10000 \
+        --max_memory 50G \
+        --CPU $PBS_NUM_PPN \
+        --output "$DIR/trinity/"
+#+END_SRC
+
+#+BEGIN_SRC sh :tangle trinity/gmap.sh
+cd $DIR
+ROOT=$(git rev-parse --show-toplevel)
+
+ml igbb gmap
+
+gmap_build -D $DIR/trinity -d longicalyx.db $DIR/longicalyx_v5.genome.hardMasked.fasta
+
+gmap -D $DIR/trinity -d longicalyx.db -t $PBS_NUM_PPN -f gff3_gene \
+   $DIR/trinity/Trinity-GG.fasta > $DIR/trinity/longicalyx.gff
+
+#+END_SRC
+
+** DONE StringTie
+
+#+HEADER: :prologue #PBS -N stringtie -l walltime=48:00:00
+#+BEGIN_SRC sh :var libs=libs[,0] :tangle stringtie/run.sh
+cd $DIR
+ROOT=$(git rev-parse --show-toplevel)
+
+ml igbb samtools stringtie
+parallel -j $PBS_NUM_PPN \
+stringtie $DIR/hisat/{}.bam.sort.bam \
+    -o $DIR/stringtie/{}.gtf \
+::: "${libs[@]}"
+    
+stringtie --merge -o $DIR/stringtie/longicalyx.gtf $(printf "$DIR/stringtie/%s.gtf " "${libs[@]}")
+#+END_SRC
+
+** SKIP CLASS2
+#+HEADER: :prologue #PBS -N class -l walltime=48:00:00
+#+BEGIN_SRC sh :var libs=libs[,0] :tangle class/run.sh
+cd $DIR
+ROOT=$(git rev-parse --show-toplevel)
+
+PATH=$DIR/bin:$PATH
+
+name="${libs[$PBS_ARRAYID]}"
+
+ml igbb
+ml samtools
+
+mkdir $DIR/class/tmp
+
+parallel -j $PBS_NUM_PPN \
+  perl $DIR/bin/CLASS-2.1.7/run_class.pl \
+    -a $DIR/hisat/{}.bam.sort.bam \
+    -o $DIR/class/{}.gtf \
+    --wd $DIR/class/tmp ::: "${libs[@]}"
+    
+
+$DIR/bin/gffcompare-0.11.2/gffcompare $(printf "$DIR/class/%s.gtf " <<<"${libs[@]}")  -o class/longicalyx.gtf
+
+#+END_SRC
+
+
+** DONE Cufflinks
+#+HEADER: :prologue #PBS -N cufflinks -l walltime=48:00:00
+#+BEGIN_SRC sh :var libs=libs[,0] :tangle cufflinks/run.sh
+cd $DIR/
+ROOT=$(git rev-parse --show-toplevel)
+
+PATH=$DIR/bin/cufflinks-2.2.1:$PATH
+
+ml igbb
+ml samtools
+
+cufflinks $(printf "$DIR/hisat/%s.bam.sort.bam " "${libs[@]}") \
+    -p $PBS_NUM_PPN \
+    -o $DIR/cufflinks/longicalyx \
+    --no-update-check
+    
+
+#+END_SRC
+
+** DONE Portcullis
+#+HEADER: :prologue #PBS -N portcullis -l walltime=48:00:00
+#+BEGIN_SRC sh :var libs=libs[,0] :tangle portcullis/run.sh
+cd $DIR
+ROOT=$(git rev-parse --show-toplevel)
+
+ml singularity
+ml use /work/maa146/biocontainers/modulefiles
+ml portcullis
+
+singularity exec -B$ROOT \
+/work/maa146/biocontainers/containers/portcullis/portcullis-1.2.2--py37h56fc30b_0.simg \
+portcullis full -t $PBS_NUM_PPN \
+    --strandedness unstranded \
+    -o $DIR/portcullis/longicalyx/ \
+    $DIR/longicalyx_v5.genome.hardMasked.fasta  $(printf "$DIR/hisat/%s.bam.sort.bam " "${libs[@]}")
+
+#+END_SRC
+
+** DONE Mikado
+#+HEADER: :prologue #PBS -N mikado -l walltime=48:00:00
+#+BEGIN_SRC sh :tangle mikado/run.sh
+cd $DIR
+ROOT=$(git rev-parse --show-toplevel)
+
+name="longicalyx"
+
+ml use $DIR/bin/modulefiles/
+ml singularity mikado
+
+cd $DIR/mikado/
+
+
+cat <<EOF >list.txt
+$DIR/cufflinks/$name/transcripts.gtf	Cufflinks	False
+$DIR/stringtie/$name.gtf	Stringtie	False	1
+$DIR/trinity/$name.gff	Trinity	False	-0.5
+EOF
+
+mikado configure \
+  --reference $DIR/longicalyx_v5.genome.hardMasked.fasta \
+  --list list.txt \
+  --scoring plants.yaml \
+  --blast_targets /work/datasets/igbb/uniprot_sprot.2019_07.fa  \
+  --junctions $DIR/portcullis/$name/3-filt/portcullis_filtered.pass.junctions.bed \
+  $DIR/mikado/config.yaml
+
+mikado prepare --json-conf config.yaml
+
+fasta-splitter.pl --n-parts 20 mikado_prepared.fasta
+
+#+END_SRC
+
+#+HEADER: :prologue #PBS -N blast -l walltime=12:00:00 -t 1-20
+#+BEGIN_SRC sh :tangle mikado/blast.sh
+cd $DIR
+ROOT=$(git rev-parse --show-toplevel)
+
+cd $DIR/mikado/
+
+ml igbb
+ml blast
+
+printf -v j "%02d" $PBS_ARRAYID
+
+blastx -max_target_seqs 5 -num_threads $PBS_NUM_PPN \
+       -query mikado_prepared.part-$j.fasta \
+       -outfmt 5 \
+       -db /work/datasets/igbb/uniprot_sprot.2019_07 \
+       -evalue 0.000001 2> blast.log | sed '/^$/d' | gzip -c - > mikado.blast.$j.xml.gz
+#+END_SRC
+
+#+HEADER: :prologue #PBS -N transdecoder -l walltime=12:00:00 
+#+BEGIN_SRC sh :tangle mikado/transdecoder.sh
+cd $DIR
+ROOT=$(git rev-parse --show-toplevel)
+
+ml use $DIR/bin/modulefiles/
+ml singularity gffread transdecoder
+
+cd $DIR/mikado/
+ 
+TransDecoder.LongOrfs -t $DIR/mikado/mikado_prepared.fasta
+TransDecoder.Predict  -t $DIR/mikado/mikado_prepared.fasta
+#+END_SRC
+
+#+HEADER: :prologue #PBS -N mikado -l walltime=48:00:00
+#+BEGIN_SRC sh :tangle mikado/subloci.sh
+
+cd $DIR
+ROOT=$(git rev-parse --show-toplevel)
+
+ml use $DIR/bin/modulefiles/
+ml singularity mikado
+
+mikado ()
+{
+    singularity exec -B /work/ /work/maa146/longicalyx/annotate/bin/containers/mikado/mikado-1.2.4--py36h24bf2e0_0.simg mikado $@
+}
+
+
+
+cd $DIR/mikado/
+
+mikado serialise \
+  --json-conf $DIR/mikado/config.yaml \
+  --xml $(ls -m $DIR/mikado/mikado.blast.{01..20}.xml.gz | tr -d "\n")\
+  --blast_targets /work/datasets/igbb/uniprot_sprot.2019_07.fa \
+  --orf $DIR/mikado/mikado_prepared.fasta.transdecoder.bed
+
+mikado pick --json-conf $DIR/mikado/config.yaml --subloci_out $DIR/mikado/mikado.subloci.gff3
+
+
+#+END_SRC
+
+* Maker
+
+#+BEGIN_SRC sh :tangle maker/setup.sh
+cd $DIR/
+ROOT=$(git rev-parse --show-toplevel)
+
+ml singularity
+maker () { singularity exec -B$ROOT $DIR/bin/containers/maker-2.31.10.sif maker "$@"; }
+
+AUGUSTUS_CONFIG_PATH=$DIR/braker/config
+
+
+declare -A maker_opts
+maker_opts["genome"]=$DIR/longicalyx_v5.genome.hardMasked.fasta
+maker_opts["altest"]=$DIR/ref/gossypium.ests.fa
+maker_opts["protein"]=$DIR/ref/Gohir.Gorai.uniport.fa
+
+maker_opts["model_org"]=""
+maker_opts["repeat_protein"]=""
+#maker_opts["snaphmm"]=$DIR/snap/${name}.hmm                     #SNAP HMM file
+maker_opts["gmhmm"]=$DIR/braker/braker/Sp_1/GeneMark-ET/output/gmhmm.mod
+maker_opts["augustus_species"]=Sp_1                            #Augustus gene prediction species model
+maker_opts["pred_gff"]=$DIR/mikado/mikado.loci.gff3       #ab-initio predictions from an external GFF3 file
+
+maker_opts["alt_splice"]=1                                      #find alternative splicing
+maker_opts["always_complete"]=1                                 #force start and stop codons
+
+maker_opts["clean_try"]=1                                       #remove all data from previous run before retrying
+maker_opts["clean_up"]=1                                        #removes theVoid directory 
+
+
+declare -A maker_exe
+maker_exe["probuild"]=$DIR/bin/gm_et_linux_64/probuild
+maker_exe["gmhmme3"]=$DIR/bin/gm_et_linux_64/gmhmme3
+
+#HACK: Add augustus path to end of augustus_species because maker's augustus run
+#      does not respect the AUGUSTUS_CONFIG_PATH env variable
+maker_opts["augustus_species"]+=" --AUGUSTUS_CONFIG_PATH=$AUGUSTUS_CONFIG_PATH"
+
+cd $DIR/maker.sing
+maker -CTL
+
+for key in "${!maker_opts[@]}"; do
+    value=${maker_opts[$key]}
+    sed --follow-symlinks -i "s#^\($key *=\).*#\1$value#" maker_opts.ctl
+done
+
+for key in "${!maker_exe[@]}"; do
+    value=${maker_exe[$key]}
+    sed --follow-symlinks -i "s#^\($key *=\).*#\1$value#" maker_exe.ctl
+done
+
+
+#+END_SRC
+
+#+HEADER: :prologue #PBS -N maker -l walltime=48:00:00
+#+BEGIN_SRC sh :tangle maker/run.sh
+cd $DIR/
+ROOT=$(git rev-parse --show-toplevel)
+
+ml singularity
+maker () { singularity exec -B$ROOT $DIR/bin/containers/maker-2.31.10.sif maker "$@"; }
+
+cd $DIR/maker.sing
+mkdir -p $DIR/maker.sing/tmp/$PBS_ARRAYID
+
+maker -fix_nucleotides \
+      -b $PBS_ARRAYID \
+      -g "$DIR/split/longicalyx.$PBS_ARRAYID.fa" \
+      -c $PBS_NUM_PPN \
+      -TMP $DIR/maker.sing/tmp/$PBS_ARRAYID/ \
+      --ignore_nfs_tmp \
+    |& tee ${PBS_ARRAYID}.log
+
+
+# rm -R $DIR/maker.2/$name/tmp/$PBS_ARRAYID
+# tar -C $DIR/maker.2/$name/ \
+#     -czf $PBS_ARRAYID.tar.gz \
+#     $PBS_ARRAYID.maker.output/${PBS_ARRAYID}_{datastore/,master_datastore_index.log} $PBS_ARRAYID.log
+#+END_SRC
+
+#+BEGIN_SRC sh :tangle maker/progress.sh
+
+progress=$(printf '=%.0s' {1..100})
+
+for i in {1..13}; do
+  complete=0
+
+  if [ -d "$DIR/maker.sing/$i.maker.output"  ]; then
+    log=$(find "$DIR/maker.sing/$i.maker.output/" -name 'run.log')
+    done=$(grep -e 'LOGCHILD' $log | uniq | wc -l )
+    total=$(grep -c -e 'FINISHED.*.pred.raw.section' $log)
+
+    complete=$[ done * 100 / total ]
+  fi
+
+  printf "%2d [%-100s] %d%%\n" $i ${progress:0:$complete} $complete
+
+done
+
+#+END_SRC
+
+#+BEGIN_SRC sh :tangle maker/combine.sh
+cd $DIR/maker
+ROOT=$(git rev-parse --show-toplevel)
+
+ml singularity
+gff3_merge () { singularity exec -B$ROOT $DIR/bin/containers/maker-2.31.10.sif gff3_merge "$@"; }
+fasta_merge () { singularity exec -B$ROOT $DIR/bin/containers/maker-2.31.10.sif fasta_merge "$@"; }
+
+#Combine the master datastore index files, adding the maker.output directory they come from
+find $DIR/maker/ -maxdepth 2 -name '*_master_datastore_index.log' | 
+  xargs awk '{ n=split(FILENAME, dirs, "/"); $2=dirs[n-1] "/" $2; } 1;' OFS="\t" > $DIR/maker/master_datastore_index.log
+
+gff3_merge -s -n -g -d $DIR/maker/master_datastore_index.log > $DIR/maker/longicalyx.gff3
+fasta_merge -d $DIR/maker/master_datastore_index.log -o $DIR/maker/longicalyx
+
+
+#+END_SRC
+
+
+* BUSCO
+#+BEGIN_SRC sh :tangle busco/genes.sh
+cd $DIR/busco
+ROOT=$(git rev-parse --show-toplevel)
+
+ml igbb busco/3.1.0
+
+export AUGUSTUS_CONFIG_PATH=$DIR/braker/config
+
+run_BUSCO.py -i $DIR/maker/longicalyx.all.maker.transcripts.fasta \
+             -l /work/datasets/igbb/busco/eudicotyledons_odb10 \
+             -m transcriptome \
+             -c $PBS_NUM_PPN \
+             -o longicalyx.transcriptome \
+             -t tmp_longicalyx.transcriptome
+
+#+END_SRC
+
+* Filter
+
+#+BEGIN_SRC R :tangle busco/plot.R
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+
+getAttributeField <- function (x, field, attrsep = ";") {
+    s = strsplit(x, split = attrsep, fixed = TRUE)
+    sapply(s, function(atts) {
+        a = strsplit(atts, split = "=", fixed = TRUE)
+        m = match(field, sapply(a, "[", 1))
+        if (!is.na(m)) {
+            rv = a[[m]][2]
+        } else {
+            rv = as.character(NA)
+        }
+        return(rv)
+    })
+}
+
+gffRead <- function(gffFile, nrows = -1) {
+    cat("Reading ", gffFile, ": ", sep="")
+    gff = read.table(gffFile, sep="\t", as.is=TRUE, quote="", header=FALSE, comment.char="#", nrows = nrows,
+                     colClasses=c("character", "character", "character", "integer", "integer", "character",
+                                  "character", "character", "character"))
+    colnames(gff) = c("seqname", "source", "feature", "start", "end", "score", "strand", "frame", "attributes")
+    cat("found", nrow(gff), "rows with classes:", paste(sapply(gff, class), collapse=", "), "\n")
+    return(gff)
+} 
+
+gff <- gffRead(file.path(DIR, 'maker', 'longicalyx.gff3'))
+
+mrna <- subset(gff, feature == 'mRNA')
+
+data=data.frame(ID=getAttributeField(mrna$attributes, 'Name'), AED=as.numeric(getAttributeField(mrna$attributes, '_AED')))
+
+aed.counts <- data %>% 
+    count(AED) %>% 
+    complete(AED=seq(0,1,0.01), fill=list(n=0)) %>%
+    arrange(AED) %>%
+    mutate(Genes = cumsum(n)) %>%
+    tibble::add_column(group="Total Gene", Type="Complete")
+
+
+busco=read.delim(file.path(DIR, 'busco', 'run_longicalyx.transcriptome', 'full_table_longicalyx.transcriptome.tsv'), 
+                 comment.char='#', col.names=c('Busco', 'Type', 'ID', 'Score', 'Length'), header=F, stringsAsFactors=F)
+busco$Type = factor(busco$Type)
+data.merge=merge(busco, data, all.x=T)                 
+
+
+
+data.plot <- data.merge %>%  
+    replace_na(list(AED=0)) %>% 
+    count(Type, AED) %>%
+    complete(Type, AED=round(seq(0,1,0.01),2), fill=list(n=0)) %>%
+    arrange(Type, AED) %>%  
+    group_by(Type) %>% mutate(BUSCOs = cumsum(n)) %>%
+    tibble::add_column(group="BUSCO")
+
+bind_rows(data.plot, aed.counts)
+
+p <- ggplot(data.plot, aes(x=AED, group=Type, fill=Type)) + 
+     geom_area(aes(y=BUSCOs), position='stack') + 
+     geom_line(data=aed.counts, aes(y=Genes)) +
+     scale_x_continuous(breaks=seq(0, 1, by=0.1), sec.axis = dup_axis()  ) +
+     scale_fill_manual(values = c('#33a02c', '#b2df8a', '#a6cee3', "#fdbf6f" )) +
+     facet_grid(group~.,scales='free_y')
+
+
+ggsave(file.path(DIR, '6-filter-gff', "busco_vs_aed.png"), p, width=7, height=3.5)
+#+END_SRC
+
+#+BEGIN_SRC sh :tangle 6-filter-gff/run.sh
+cd $DIR
+
+ml use $DIR/bin/modulefiles/
+ml singularity gffread
+
+$DIR/bin/quality_filter -a 0.47 $DIR/maker/longicalyx.gff3 |
+#-- Fix error in quality_filter script
+# If an exon belongs to more than one isform and one of those isoforms are
+# filtered, then there's a chance that the filtering script leaves a dangling
+# common at the end of the Parent attribute field.
+sed 's/,$/;/' > $DIR/6-filter-gff/longicalyx.gff3
+
+gffread $DIR/6-filter-gff/longicalyx.gff3 \
+     -g $DIR/longicalyx_v5.genome.hardMasked.fasta \
+     -w $DIR/6-filter-gff/longicalyx.transcripts.fa \
+     -y $DIR/6-filter-gff/longicalyx.protiens.fa
+
+#+END_SRC
+
+* Orthofinder
+
+#+BEGIN_SRC sh :tangle orthofinder/run.sh
+cd $DIR/orthofinder
+ROOT=$(git rev-parse --show-toplevel)
+
+sed 's/ .*//g' $DIR/ref/G.raimondii_JGI_221_v2.1.proteins.fasta | 
+    grep '[.]1\{0,1\}$' | 
+    sed '/[.]N/d' | 
+    sed 's/>//g' |
+    xargs samtools faidx $DIR/ref/G.raimondii_JGI_221_v2.1.proteins.fasta \
+    > $DIR/orthofinder/D5.fa
+
+sed 's/ .*//g' $DIR/ref/Tx-JGI_G.hirsutum_v1.1.protein.fa | 
+    grep '[.]1\{0,1\}.p$' | 
+    sed '/[.]N/d' | 
+    sed 's/>//g' |
+    xargs samtools faidx $DIR/ref/Tx-JGI_G.hirsutum_v1.1.protein.fa \
+    > $DIR/orthofinder/AD1.fa
+
+sed 's/ .*//g' $DIR/6-filter-gff/longicalyx.protiens.fa | 
+    grep '[-]1\{0,1\}$' | 
+    sed '/[.]N/d' | 
+    sed 's/>//g' |
+    xargs samtools faidx $DIR/6-filter-gff/longicalyx.protiens.fa \
+    > $DIR/orthofinder/F.fa
+
+ml singularity
+orthofinder () { singularity exec -B$ROOT $DIR/bin/containers/orthofinder-2.3.3.sif orthofinder "$@" ; }
+
+orthofinder -t $PBS_NUM_PPN -S diamond -f $DIR/orthofinder/
+#+END_SRC
+
+
+* Iprscan
+#+BEGIN_SRC sh :tangle 7-iprscan/run.sh
+cd $DIR
+ROOT=$(git rev-parse --show-toplevel)
+
+ml igbb interproscan/5.35-74.0
+
+interproscan.sh \
+   -i $DIR/6-filter-gff/longicalyx.protiens.fa \
+   -f xml,tsv \
+   -pathways \
+   -iprlookup \
+   -goterms \
+   -dp  \
+   -appl 'Pfam, PRINTS, PANTHER, TIGRFAM, SUPERFAMILY, PIRSF, ProSiteProfiles, ProSitePatterns, SMART' \
+   -b $DIR/7-iprscan/longicalyx \
+   -cpu $PBS_NUM_PPN
+
+
+#+END_SRC
