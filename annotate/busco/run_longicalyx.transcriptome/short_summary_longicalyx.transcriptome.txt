@@ -1,0 +1,15 @@
+# BUSCO version is: 3.1.0 
+# The lineage dataset is: eudicotyledons_odb10 (Creation date: 2017-12-01, number of species: 40, number of BUSCOs: 2121)
+# To reproduce this run: python /usr/local/igbb/busco-3.1.0/bin/run_BUSCO.py -i /work/maa146/longicalyx/annotate//maker/longicalyx.all.maker.transcripts.fasta -o longicalyx.transcriptome -l /work/datasets/igbb/busco/eudicotyledons_odb10/ -m transcriptome -c 4 -t tmp_longicalyx.transcriptome/
+#
+# Summarized benchmarking in BUSCO notation for file /work/maa146/longicalyx/annotate//maker/longicalyx.all.maker.transcripts.fasta
+# BUSCO was run in mode: transcriptome
+
+	C:94.4%[S:80.5%,D:13.9%],F:2.8%,M:2.8%,n:2121
+
+	2003	Complete BUSCOs (C)
+	1708	Complete and single-copy BUSCOs (S)
+	295	Complete and duplicated BUSCOs (D)
+	60	Fragmented BUSCOs (F)
+	58	Missing BUSCOs (M)
+	2121	Total BUSCO groups searched

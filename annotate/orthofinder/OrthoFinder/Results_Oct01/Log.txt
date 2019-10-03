@@ -1,0 +1,13 @@
+2019-10-01 17:10:09 : Started OrthoFinder version 2.3.3
+Command Line: /usr/local/bin/orthofinder -t 6 -S diamond -f /work/maa146/longicalyx/annotate//orthofinder/
+
+WorkingDirectory_Base: /work/maa146/longicalyx/annotate/orthofinder/OrthoFinder/Results_Oct01/WorkingDirectory/
+
+Species used: 
+0: AD1.fa
+1: D5.fa
+2: F.fa
+
+FN_Orthogroups: /work/maa146/longicalyx/annotate/orthofinder/OrthoFinder/Results_Oct01/WorkingDirectory/clusters_OrthoFinder_I1.5.txt_id_pairs.txt
+WorkingDirectory_Trees: /work/maa146/longicalyx/annotate/orthofinder/OrthoFinder/Results_Oct01/WorkingDirectory/
+2019-10-01 18:15:36 : OrthoFinder run completed
