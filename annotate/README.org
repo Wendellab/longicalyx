@@ -643,3 +643,167 @@ interproscan.sh \
 
 
 #+END_SRC
+
+* Blast
+
+#+BEGIN_SRC sh :tangle 8-blast/run.sh
+cd $DIR
+ROOT=$(git rev-parse --show-toplevel)
+
+ml igbb blast
+
+blastp -query $DIR/6-filter-gff/longicalyx.protiens.fa \
+       -db /work/datasets/igbb/uniprot_sprot.2019_07 \
+       -outfmt 6 \
+       -out $DIR/8-blast/longicalyx.out \
+       -num_threads $PBS_NUM_PPN
+#+END_SRC
+
+* Rename
+#+BEGIN_SRC sh :tangle 9-rename/run.sh
+cd $DIR
+ROOT=$(git rev-parse --show-toplevel)
+
+ml singularity
+maker_map_ids () { singularity exec -B$ROOT $DIR/bin/containers/maker-2.31.10.sif maker_map_ids "$@"; }
+map_gff_ids            () { singularity exec -B/work/datasets/igbb/ -B$ROOT $DIR/bin/containers/maker-2.31.10.sif map_gff_ids "$@"; }
+map_fasta_ids          () { singularity exec -B/work/datasets/igbb/ -B$ROOT $DIR/bin/containers/maker-2.31.10.sif map_fasta_ids "$@"; }
+map_data_ids           () { singularity exec -B/work/datasets/igbb/ -B$ROOT $DIR/bin/containers/maker-2.31.10.sif map_data_ids "$@"; }
+maker_functional_gff   () { singularity exec -B/work/datasets/igbb/ -B$ROOT $DIR/bin/containers/maker-2.31.10.sif maker_functional_gff "$@"; }
+maker_functional_fasta () { singularity exec -B/work/datasets/igbb/ -B$ROOT $DIR/bin/containers/maker-2.31.10.sif maker_functional_fasta "$@"; }
+ipr_update_gff         () { singularity exec -B/work/datasets/igbb/ -B$ROOT $DIR/bin/containers/maker-2.31.10.sif ipr_update_gff "$@"; }
+
+
+# Create mapping for for gene names
+# Split gff based on chr to restart iterator for each chr
+# Gene format Golon.0!!G####00
+# mRNA format Golon.0!!G####00-%
+
+mkdir $DIR/9-rename/split
+pushd $DIR/9-rename/split
+awk ' !/^#/{ print >> $1 ".gff"}' $DIR/6-filter-gff/longicalyx.gff3
+popd
+
+for chr in {01..13}; do
+    maker_map_ids --prefix "Golon.0${chr}G" \
+                  --iterate 1 \
+                  --justify 4 \
+                  --suffix '-' \
+                  $DIR/9-rename/split/F$chr.gff |
+        sed 's/\(Golon.0[01][0-9]G[0-9]\{4\}\)/\100/'
+done > $DIR/9-rename/longicalyx.map
+
+# Copy all files since maker is destructive
+cp -H $DIR/6-filter-gff/longicalyx.gff3 \
+      $DIR/6-filter-gff/longicalyx.proteins.fa \
+      $DIR/6-filter-gff/longicalyx.transcripts.fa \
+      $DIR/9-rename/
+cp -H $DIR/7-iprscan/longicalyx.tsv $DIR/9-rename/longicalyx.iprscan
+cp -H $DIR/8-blast/longicalyx.out   $DIR/9-rename/longicalyx.blastp
+
+PREFIX=$DIR/9-rename/longicalyx
+
+chmod +w $PREFIX.gff3            \
+         $PREFIX.proteins.fa     \
+         $PREFIX.transcripts.fa  \
+         $PREFIX.iprscan         \
+         $PREFIX.blastp          
+
+map_gff_ids   $PREFIX.map $PREFIX.gff3
+map_fasta_ids $PREFIX.map $PREFIX.proteins.fa
+map_fasta_ids $PREFIX.map $PREFIX.transcripts.fa
+map_data_ids  $PREFIX.map $PREFIX.iprscan
+map_data_ids  $PREFIX.map $PREFIX.blastp
+
+uniprot=/work/datasets/igbb/uniprot_sprot.2019_07.fa
+maker_functional_gff    $uniprot  $PREFIX.blastp  $PREFIX.gff3            > $PREFIX.putative_function.gff3
+maker_functional_fasta  $uniprot  $PREFIX.blastp  $PREFIX.proteins.fa     > $PREFIX.proteins.putative_function.fa
+maker_functional_fasta  $uniprot  $PREFIX.blastp  $PREFIX.transcripts.fa  > $PREFIX.transcripts.putative_function.fa
+
+ipr_update_gff $PREFIX.putative_function.gff3 $PREFIX.iprscan > $PREFIX.putative_function.domain_added.gff3
+
+mv $PREFIX.putative_function.domain_added.gff3 $PREFIX.gff3
+mv $PREFIX.proteins.putative_function.fa       $PREFIX.proteins.fa
+mv $PREFIX.transcripts.putative_function.fa    $PREFIX.transcripts.fa
+
+
+#+END_SRC
+
+
+#+BEGIN_SRC sh :tangle final/rename.sh
+cd $DIR
+ROOT=$(git rev-parse --show-toplevel)
+
+ml igbb maker bioperl
+PATH=$DIR/bin/gt-1.5.10/bin:$PATH
+
+
+#Sort genome fasta file based on length of seqeunce
+bp_seqconvert.pl --to=tab --from=fasta < $DIR/Perch.v2.fa | 
+    awk '{print $0, length($2)}' OFS="\t" |
+    sort -k3,3nr |
+    cut -f 1,2 |
+    bp_seqconvert.pl --to=fasta --from=tab > $DIR/final/Perch.v2.sort.fa
+
+#Scaffold name map made by hand to align with previously published genome
+#Chromosomes format:       Pfla##
+#Unplaced scaffold format: PflaUN####
+
+#Rename scaffold ids in genome fasta
+#map_fasta_ids does replacement inplace.
+cp $DIR/final/Perch.v2.sort.fa  $DIR/final/Pfla.genome.fa
+map_fasta_ids $DIR/final/Perch.v2.sort.map $DIR/final/Pfla.genome.fa
+
+#Rename scaffold ids in gff
+awk '{printf "s/^%s\t/%s\t/\n", $1, $2}' $DIR/final/Perch.v2.sort.map |
+    sed -f - $DIR/Perch.v2.AED-0.3.gff3 > $DIR/final/Perch.v2.rename.gff3
+
+#-- Fix error in quality_filter script
+# If an exon belongs to more than one isform and one of those isoforms are
+# filtered, then there's a chance that the filtering script leaves a dangling
+# common at the end of the Parent attribute field.
+sed 's/,$/;/' $DIR/final/Perch.v2.rename.gff3 >  $DIR/final/Perch.v2.rename.fix-parent.gff3
+
+# Sort gff sanely to rename genes based on location on chr
+gt gff3 -sort -tidy -retainids \
+   $DIR/final/Perch.v2.rename.fix-parent.gff3 \
+   > $DIR/final/Perch.v2.rename.fix-parent.sort.gff3
+
+
+# Create mapping for for gene names
+# Split gff based on chr to restart iterator for each chr
+# Gene format Pfla!!G#####
+# mRNA format Pfla!!G#####-%
+mkdir $DIR/final/split
+cd $DIR/final/split
+awk ' !/^#/{ print >> substr($1, 0, 6) ".gff"}' $DIR/final/Perch.v2.rename.fix-parent.sort.gff3
+for chr in Pfla{{01..24},UN}; do
+    maker_map_ids --prefix ${chr}G --iterate 1 --justify 5 --suffix - $DIR/final/split/$chr.gff > $DIR/final/split/$chr.map
+done
+cd $DIR/final
+cat $DIR/final/split/Pfla{{01..24},UN}.map > $DIR/final/Perch.v2.gene.map
+rm -r $DIR/final/split
+
+#Rename genes in gff file
+cp $DIR/final/Perch.v2.rename.fix-parent.sort.gff3 $DIR/final/Pfla.gff3
+map_gff_ids $DIR/final/Perch.v2.gene.map $DIR/final/Pfla.gff3
+
+#Rename protein and transcripts file
+cp $DIR/Perch.v2.AED-0.3.proteins.fa       $DIR/final/Pfla.proteins.fa
+map_fasta_ids $DIR/final/Perch.v2.gene.map $DIR/final/Pfla.proteins.fa
+cp $DIR/Perch.v2.AED-0.3.transcripts.fa    $DIR/final/Pfla.transcripts.fa
+map_fasta_ids $DIR/final/Perch.v2.gene.map $DIR/final/Pfla.transcripts.fa
+
+
+#Sort protein and transcripts fasta by name
+tr '\n' '\0' < $DIR/final/Pfla.proteins.fa |
+    sed 's/\x0>/\n>/g' |
+    sort -k1,1 |
+    tr '\0' '\n' > $DIR/final/Pfla.proteins.sort.fa
+tr '\n' '\0' < $DIR/final/Pfla.transcripts.fa |
+    sed 's/\x0>/\n>/g' |
+    sort -k1,1 |
+    tr '\0' '\n' > $DIR/final/Pfla.transcripts.sort.fa
+mv $DIR/final/Pfla.proteins.sort.fa $DIR/final/Pfla.proteins.fa
+mv $DIR/final/Pfla.transcripts.sort.fa $DIR/final/Pfla.transcripts.fa
+#+END_SRC
